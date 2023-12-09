@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+</head>
+
+<body>
+    <h1>OtoMADB 音MADが多い<span id="tagname">？？？</span>ランキング</h1>
+    <script>
+        const tags = {
+            MUSIC: "曲",
+            CHARACTER: "キャラクター",
+            COPYRIGHT: "作品",
+            // EVENT: "イベント",
+            PHRASE: "セリフ",
+            SERIES: "シリーズ",
+            // STYLE: "性質",
+            // TACTICS: "戦法",
+        }
+        const name = new URL(location.href).searchParams.get("tag")
+        if (name == null) {
+            const ul = document.createElement("ul")
+            for (const [name, displayName] of Object.entries(tags)) {
+                const li = document.createElement("li")
+                const a = document.createElement("a")
+                a.href = "?tag=" + name
+                a.textContent = displayName
+                li.appendChild(a)
+                ul.appendChild(li)
+            }
+            document.body.appendChild(ul)
+            throw new Error("おわり");
+        }
+        document.getElementById("tagname").textContent = tags[name] ?? name;
+        const query = `
+# Your GraphQL query or mutation goes here
+query($tagName: String) {
+  findTags(input: {name: $tagName}) {
+    nodes {
+      name
+      children(first: 999999) {
+        nodes {
+          child {
+            serial
+            name
+            explicitParent {
+              name
+            }
+            taggedVideos(first: 999999) {
+              nodes {
+                video {
+                  serial
+                  title
+                  nicovideoSources {
+                    url
+                  }
+                  youtubeSources {
+                    url
+                  }
+                  soundcloudSources {
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`;
+        const loading = document.createElement("div")
+        loading.textContent = "読み込み中…"
+        document.body.appendChild(loading)
+        fetch("https://api.otomadb.com/graphql", {
+            method: "POST",
+            body: JSON.stringify({ query, variables: {
+                tagName: name,
+            } }),
+            headers: { "Content-Type": "application/json; charset=UTF-8" },
+        })
+            .then((r) => r.json())
+            .then((r) => {
+                const tags = r.data.findTags.nodes[0].children.nodes.map(
+                    (n) => n.child
+                );
+                tags.sort((a, b) => {
+                    return b.taggedVideos.nodes.length - a.taggedVideos.nodes.length;
+                });
+                console.log(tags);
+                let rankCurrent = 0;
+                let rankNext = 1;
+                let previousLength = -1;
+                for (const tag of tags) {
+                    if (previousLength !== tag.taggedVideos.nodes.length) {
+                        rankCurrent = rankNext;
+                        previousLength = tag.taggedVideos.nodes.length;
+                    }
+                    const section = document.createElement("section");
+                    const h2 = document.createElement("h2");
+                    h2.append(document.createTextNode(`${rankCurrent}. ${tag.name} `));
+                    if (tag.explicitParent != null) {
+                        const small = document.createElement("small");
+                        small.textContent = "(" + tag.explicitParent.name + ")";
+                        h2.appendChild(small);
+                    }
+                    h2.append(
+                        document.createTextNode(`(${tag.taggedVideos.nodes.length} 作品)`)
+                    );
+                    rankNext++;
+                    section.appendChild(h2);
+                    for (const { video } of tag.taggedVideos.nodes) {
+                        const a = document.createElement("a");
+                        a.href = `https://www.otomadb.com/mads/${video.serial}`;
+                        a.textContent = video.title;
+                        section.appendChild(a);
+                        section.append(document.createTextNode(", "));
+                    }
+                    document.body.appendChild(section);
+                }
+                loading.remove()
+            })
+            .catch(e => {
+                console.error(e)
+                loading.textContent = `失敗……\n${e}`
+            });
+    </script>
+</body>
+
+</html>
